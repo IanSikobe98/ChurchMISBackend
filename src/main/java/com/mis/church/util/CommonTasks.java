@@ -8,6 +8,11 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -16,6 +21,9 @@ public class CommonTasks {
 
     private final StatusRepo statusRepo;
     private static final String SECRET_KEY = "3$RcX@8eWp9Tq3Ls"; // Must match the JS secret key
+    private static final String Church ="CH";
+    private static final String Equipment ="EQ";
+
 
 
     public Status getStatus(int id) {
@@ -49,6 +57,24 @@ public class CommonTasks {
             log.error(e.getMessage());
             return null;
         }
+    }
+
+    public static String generateRequestId(Long equipId ) {
+        Date valueDate = new Date();
+        // Parse the string to LocalDate
+        LocalDateTime localDateTime = valueDate.toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
+
+        // Define formatter for the output string
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+        String formattedDate = localDateTime.format(formatter);
+
+
+        String padded = String.format("%04d", equipId);
+
+        return Church+Equipment+equipId+formattedDate+padded;
+
     }
 
 }

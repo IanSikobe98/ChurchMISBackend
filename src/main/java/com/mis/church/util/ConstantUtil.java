@@ -24,6 +24,16 @@ public class ConstantUtil {
     public Status PENDING_APPROVAL;
     public Status REJECTED;
 
+    public Status GOOD;
+    public Status EXCELLENT;
+    public Status FAIR;
+    public Status DAMAGED;
+    public Status AVAILABLE;
+    public Status ALLOCATED;
+    public Status MAINTENANCE;
+    public Status RETURNED;
+    public Status LOST;
+
     @PostConstruct
     public void init() {
         INACTIVE = commonTasks.getStatus(0);
@@ -34,6 +44,15 @@ public class ConstantUtil {
         OTP_SENT = commonTasks.getStatus(5);
         PENDING_APPROVAL = commonTasks.getStatus(6);
         REJECTED = commonTasks.getStatus(7);
+        GOOD = commonTasks.getStatus(8);
+        EXCELLENT = commonTasks.getStatus(9);
+        FAIR = commonTasks.getStatus(10);
+        DAMAGED = commonTasks.getStatus(11);
+        AVAILABLE = commonTasks.getStatus(12);
+        ALLOCATED = commonTasks.getStatus(13);
+        MAINTENANCE = commonTasks.getStatus(14);
+        RETURNED = commonTasks.getStatus(15);
+        LOST = commonTasks.getStatus(16);
 
     }
 }

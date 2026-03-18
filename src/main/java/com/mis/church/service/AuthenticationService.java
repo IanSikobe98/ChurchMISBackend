@@ -212,7 +212,8 @@ public class AuthenticationService {
         try{
 
             String username = otpRequest.getUsername();
-            String password = commonTasks.AESdecrypt(otpRequest.getPassword());
+//            String password = commonTasks.AESdecrypt(otpRequest.getPassword());
+            String password = otpRequest.getPassword();
             String otp = otpRequest.getOtp();
 
 
