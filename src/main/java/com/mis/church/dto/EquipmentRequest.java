@@ -9,5 +9,6 @@ public class EquipmentRequest {
     private String purpose;
     private String venue;
     private String event;
+    private String returnDate;
 
 }

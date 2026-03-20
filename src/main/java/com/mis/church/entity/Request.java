@@ -58,11 +58,24 @@ public class Request {
     @Column(name = "updated_by", length = 100)
     private String updatedBy;
 
+    @Column(name = "return_date")
+    private Date returnDate;
+
+    @ManyToOne
+    @JoinColumn(name = "equipment_id", referencedColumnName = "id")
+    private Equipment equipment;
+
+    @Column(name ="quantity")
+    private Integer quantity;
+
+    @Column(name ="current_approval_level")
+    private Integer currentApprovalLevel;
+
     /**
      * Optional: link approvals (very useful)
      */
-    @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<RequestApproval> approvals;
+//    @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+//    private List<RequestApproval> approvals;
 
     /**
      * Auto-manage timestamps

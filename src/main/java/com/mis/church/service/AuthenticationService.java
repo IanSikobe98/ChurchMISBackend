@@ -57,8 +57,8 @@ public class AuthenticationService {
 
         try{
             String username = authRequest.getUsername();
-//            String password = commonTasks.AESdecrypt(authRequest.getPassword());
-            String password = authRequest.getPassword();
+            String password = commonTasks.AESdecrypt(authRequest.getPassword());
+//            String password = authRequest.getPassword();
             log.info("encPassword:{}",passwordEncoder.encode(password));
             int otpExpiryTime = Integer.parseInt(environment.getProperty("church.app.OtpExpiryTime", "5"));
 
@@ -212,8 +212,8 @@ public class AuthenticationService {
         try{
 
             String username = otpRequest.getUsername();
-//            String password = commonTasks.AESdecrypt(otpRequest.getPassword());
-            String password = otpRequest.getPassword();
+            String password = commonTasks.AESdecrypt(otpRequest.getPassword());
+//            String password = otpRequest.getPassword();
             String otp = otpRequest.getOtp();
 
 

@@ -11,4 +11,5 @@ import java.util.List;
 @Repository
 public interface EquipmentAllocationRepo extends JpaRepository<EquipmentAllocation,Integer> {
     List<EquipmentAllocation> findByRequestAndStatus(Request request, Status status);
+    List<EquipmentAllocation> findByRequest_Id(Long request);
 }

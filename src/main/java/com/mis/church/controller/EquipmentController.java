@@ -35,4 +35,45 @@ public class EquipmentController {
         log.info("RESPONSE: {}", response);
         return  response;
     }
+
+    @PostMapping("/getEquipmentConditionReport")
+    public ApiResponse getEquipmentConditionReport(HttpServletResponse httpServletResponse , @RequestBody @Valid ReportRequest request){
+        log.info("GET fetch Equipment Condition Reports Requests REQUEST :: {}", new Gson().toJson(request));
+        ReportResponse response = equipmentService.getEquipmentConditionReport(request ,httpServletResponse);
+        log.info("RESPONSE: {}", response);
+        return  response;
+    }
+
+    @PostMapping("/getEquipmentInfo")
+    public ApiResponse fetchEquipmentInfo(HttpServletResponse httpServletResponse , @RequestBody @Valid ReportRequest request){
+        log.info("GET fetch Equipment Info REQUEST :: {}", new Gson().toJson(request));
+        ReportResponse response = equipmentService.getEquipmentInformation(request ,httpServletResponse);
+        log.info("RESPONSE: {}", response);
+        return  response;
+    }
+
+    @PostMapping("/getRequestApprovalsByRole")
+    public ApiResponse getRequestApprovalsByRole(HttpServletResponse httpServletResponse , @RequestBody @Valid ReportRequest request){
+        log.info("GET fetch Request Approvals By Role Requests REQUEST :: {}", new Gson().toJson(request));
+        ReportResponse response = equipmentService.getRequestApprovalsByRole(request ,httpServletResponse);
+        log.info("RESPONSE: {}", response);
+        return  response;
+    }
+
+    @PostMapping("/getRequestApprovalsByRequest")
+    public ApiResponse getRequestApprovalsByRequest(HttpServletResponse httpServletResponse , @RequestBody @Valid ReportRequest request){
+        log.info("GET fetch Request Approvals By Request Requests REQUEST :: {}", new Gson().toJson(request));
+        ReportResponse response = equipmentService.getRequestApprovalsByRequest(request ,httpServletResponse);
+        log.info("RESPONSE: {}", response);
+        return  response;
+    }
+
+    @PostMapping("/getEquipmentByRequest")
+    public ApiResponse f(HttpServletResponse httpServletResponse , @RequestBody @Valid ReportRequest request){
+        log.info("GET fetch Equipment By Request Requests REQUEST :: {}", new Gson().toJson(request));
+        ReportResponse response = equipmentService.getEquipmentByRequest(request ,httpServletResponse);
+        log.info("RESPONSE: {}", response);
+        return  response;
+    }
+
 }
