@@ -61,13 +61,13 @@ public class Request {
     @Column(name = "return_date")
     private Date returnDate;
 
-    @ManyToOne
-    @JoinColumn(name = "equipment_id", referencedColumnName = "id")
-    private Equipment equipment;
-
-    @Column(name ="quantity")
-    private Integer quantity;
-
+//    @ManyToOne
+//    @JoinColumn(name = "equipment_id", referencedColumnName = "id")
+//    private Equipment equipment;
+//
+//    @Column(name ="quantity")
+//    private Integer quantity;
+//
     @Column(name ="current_approval_level")
     private Integer currentApprovalLevel;
 

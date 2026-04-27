@@ -1,7 +1,9 @@
 package com.mis.church.util;
 
 
+import com.mis.church.entity.ApprovalWorkflow;
 import com.mis.church.entity.Status;
+import com.mis.church.repository.ApprovalWorkflowRepo;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -34,6 +36,9 @@ public class ConstantUtil {
     public Status RETURNED;
     public Status LOST;
 
+
+    public ApprovalWorkflow EQUIPMENT_WORKFLOW;
+
     @PostConstruct
     public void init() {
         INACTIVE = commonTasks.getStatus(0);
@@ -53,6 +58,8 @@ public class ConstantUtil {
         MAINTENANCE = commonTasks.getStatus(14);
         RETURNED = commonTasks.getStatus(15);
         LOST = commonTasks.getStatus(16);
+
+        EQUIPMENT_WORKFLOW = commonTasks.getApprovalWorkflow(1);
 
     }
 }

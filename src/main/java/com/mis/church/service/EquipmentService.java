@@ -44,6 +44,8 @@ public class EquipmentService {
     private final EquipmentAllocationRepo equipmentAllocationRepo;
     private final EquipmentConditionSummaryRepo equipmentConditionSummaryRepo;
     private final ReturnRequestRepo returnRequestRepo;
+    private final RequestEquipmentRepo requestEquipmentRepo;
+    private final DptRoleMapRepo dptRoleMapRepo;
 
     @Value("${params.admin_role}")
     private String adminRole;
@@ -69,46 +71,73 @@ public class EquipmentService {
             //check for existing request
             List<Request> existingPendingRequest = requestRepo.findByCreatedByAndStatus(user.getUsername(),constantUtil.PENDING_APPROVAL);
             if(!existingPendingRequest.isEmpty()){
-                log.info("Their is an existing pending request for  Id {}", request.getEquipmentId());
+                log.info("Their is an existing pending request for  Ids {}", request.getEquipmentRequestDTOList());
                 response.setResponseCode(ApiResponseCode.FAIL);
                 response.setResponseMessage("You have existing request awaiting approval");
                 return response;
             }
 
-            //check if equipment exists for that quantity
-            List<EquipmentItem> equipmentItems =  equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(request.getEquipmentId(),constantUtil.AVAILABLE);
-            if(equipmentItems.isEmpty()){
-                log.info("The selected equipment is not available at the moment for Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment is not available at the moment.Please try again later");
-                return response;
-            }
-            if(equipmentItems.size()<request.getQuantity()){
-                log.info("At the moment only {} {}s are available for equipment Id {}", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName(),request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage(String.format("At the moment only  %s %ss are available", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName()));
-                return response;
-            }
+            List<EquipmentRequestDTO> equipmentRequests = request.getEquipmentRequestDTOList();
 
+            List<RequestEquipment> requestEquipments = new ArrayList<>();
+            List<RequestApproval> requestApprovals = new ArrayList<>();
+            HashMap<String,String> errors = new HashMap<>();
+            HashMap<Long,List<EquipmentItem>> equipmentItemsMap = new HashMap<>();
+            String error = "";
+
+            ApprovalWorkflow approvalWorkflow = constantUtil.EQUIPMENT_WORKFLOW;
+
+            if (approvalWorkflow == null) {
+                log.info("The selected equipment has not fully configured approval workflows ");
+                error = "The selected equipment has not fully configured approval workflows.Kindly contact Admin";
+                response.setResponseCode(ApiResponseCode.FAIL);
+                response.setResponseMessage(error);
+                return response;
+            }
 
             //TODO --> CHECK FOR QUALITY OF ITEMS
 
             //CHECK IF ALL WORKFLOW STEPS HAVE BEEN CREATED
-            Equipment equipment = equipmentItems.getFirst().getEquipment();
-            ApprovalWorkflow approvalWorkflow = equipment.getWorkflow();
 
-            if(approvalWorkflow==null){
-                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
-                return response;
-            }
             List<WorkflowStep> workflowSteps = workflowStepRepo.findByWorkflow(approvalWorkflow);
 
-            if(workflowSteps.isEmpty()){
-                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
+            if (workflowSteps.isEmpty()) {
+                log.info("The selected equipment has not fully configured approval workflows for equipment ");
+                error ="The selected equipment has not fully configured approval workflows.Kindly contact Admin";
                 response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
+                response.setResponseMessage(error);
+                return response;
+            }
+
+
+
+            //Validations for equipment
+            equipmentRequests.forEach(equipmentRequest -> {
+                //check if equipment exists for that quantity
+                List<EquipmentItem> equipmentItems = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(equipmentRequest.getEquipmentId(), constantUtil.AVAILABLE);
+                String errorMessage = "";
+                if (equipmentItems.isEmpty()) {
+                    log.info("The selected equipment is not available at the moment for Id {}", equipmentRequest.getEquipmentId());
+                    errorMessage = "The selected equipment is not available at the moment.Please try again later";
+                    errors.put(String.valueOf(equipmentRequest.getEquipmentId()),errorMessage);
+                    return;
+                }
+                if (equipmentItems.size() < equipmentRequest.getQuantity()) {
+                    log.info("At the moment only {} {}s are available for equipment Id {}", equipmentItems.size(), equipmentItems.getFirst().getEquipment().getName(), equipmentRequest.getEquipmentId());
+                    errorMessage = String.format("At the moment only  %s %ss are available", equipmentItems.size(), equipmentItems.getFirst().getEquipment().getName());
+                    errors.put(String.valueOf(equipmentRequest.getEquipmentId()),errorMessage);
+                    return;
+
+                }
+
+                equipmentItemsMap.put(equipmentRequest.getEquipmentId(),equipmentItems);
+            });
+
+
+            if(!errors.isEmpty()){
+                response.setResponseCode(ApiResponseCode.FAIL);
+                response.setResponseMessage("Errors occurred while creating equipment request");
+                response.setEntity(errors);
                 return response;
             }
 
@@ -117,15 +146,12 @@ public class EquipmentService {
             LocalDate returnDate = LocalDate.parse(returnDateStr, formatter);
             Date legacyDate = Date.from(returnDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
-            //Create the equipment request
-            Request equipmentRequest = Request.builder()
-                    .trxId(generateRequestId(request.getEquipmentId()))
+            Request equiRequest = Request.builder()
+                    .trxId(generateRequestId())
                     .event(request.getEvent())
                     .purpose(request.getPurpose())
                     .venue(request.getVenue())
                     .workflow(approvalWorkflow)
-                    .equipment(equipment)
-                    .quantity(request.getQuantity())
                     .currentApprovalLevel(0)
                     .returnDate(legacyDate)
                     .status(constantUtil.PENDING_APPROVAL)
@@ -134,26 +160,81 @@ public class EquipmentService {
                     .build();
 
 
-            requestRepo.saveAndFlush(equipmentRequest);
-            log.info("Request successfully requested id:{}",equipmentRequest.getId());
+            requestRepo.saveAndFlush(equiRequest);
+            log.info("Equipment Request sucessfully staged`");
 
 
-            List<RequestApproval> requestApprovals = new ArrayList<>();
-            workflowSteps.forEach(workflowStep -> {
-                RequestApproval requestApproval = RequestApproval.builder()
-                        .request(equipmentRequest)
-                        .approverRole(workflowStep.getRoleId())
-                        .stepLevel(workflowStep.getStepLevel())
-                        .isAllocater(workflowStep.getIsAllocater())
-                        .status(constantUtil.PENDING_APPROVAL)
-                        .createdAt(new Date())
-                        .build();
 
-                requestApprovals.add(requestApproval);
-            });
+            try {
+                workflowSteps.forEach(workflowStep -> {
+                    Role role = workflowStep.getRoleId();
+                    if (role == null) {
+                        //CRiteria for the various heads
+                        Optional<DptRoleMap> dptRoleMap = dptRoleMapRepo.findByRole_RoleId(user.getRole().getRoleId());
+                        if(dptRoleMap.isPresent()){
+                            DptRoleMap dptRoleMapEntity = dptRoleMap.get();
+                            Department department = dptRoleMapEntity.getDepartment();
+                            if(department != null && department.getDepartmentHead() != null) {
+                                role = department.getDepartmentHead();
+                            }
+                            else{
+                                //Skips this approval step
+                                log.info("The department head could not be found");
+                                return;
+                            }
+                        }
+                        else{
+                            //Skips this approval step
+                            log.info("The department head could not be found");
+                            return;
+                        }
+                    }
 
-            requestApprovalRepo.saveAll(requestApprovals);
-            log.info("Workflow approval steps successfully requested id:{}",equipmentRequest.getId());
+                    RequestApproval requestApproval = RequestApproval.builder()
+                            .request(equiRequest)
+                            .approverRole(role)
+                            .stepLevel(workflowStep.getStepLevel())
+                            .isAllocater(workflowStep.getIsAllocater())
+                            .status(constantUtil.PENDING_APPROVAL)
+                            .createdAt(new Date())
+                            .build();
+
+                    requestApprovals.add(requestApproval);
+                });
+
+
+                requestApprovalRepo.saveAll(requestApprovals);
+                log.info("Workflow approval steps successfully requested id:{}", equiRequest.getId());
+
+
+                //Set equipments for request
+                equipmentRequests.forEach(equipmentRequest -> {
+
+                    List<EquipmentItem> equipmentItemList = equipmentItemsMap.getOrDefault(equipmentRequest.getEquipmentId(),new ArrayList<>());
+
+                    if(!equipmentItemList.isEmpty()) {
+                        RequestEquipment requestEquipment = RequestEquipment.builder()
+                                .request(equiRequest)
+                                .equipment(equipmentItemList.getFirst().getEquipment())
+                                .quantityRequested(equipmentRequest.getQuantity())
+                                .status(constantUtil.PENDING_APPROVAL)
+                                .build();
+                        requestEquipments.add(requestEquipment);
+                    }
+                });
+                requestEquipmentRepo.saveAll(requestEquipments);
+                log.info("Request Equipment successfully created for  id:{}", equiRequest.getId());
+
+
+            }
+            catch (Exception e ){
+                e.printStackTrace();
+                equiRequest.setStatus(constantUtil.FAILED);
+                requestRepo.saveAndFlush(equiRequest);
+                response.setResponseCode(ApiResponseCode.FAIL);
+                response.setResponseMessage("Error occurred while processing approvals.Kindly Try again later");
+                return response;
+            }
             response.setResponseCode(ApiResponseCode.SUCCESS);
             response.setResponseMessage("Equipment request successfully created");
 
@@ -646,114 +727,114 @@ public class EquipmentService {
     }
 
 
-    public ApiResponse createEquipmentReturnRequests(HttpServletResponse httpServletResponse, EquipmentRequest request) {
-        ApiResponse response = new ApiResponse();
-        try{
-            log.info("Creating equipment Return using request: {}", request);
-            User user = getauthenticatedAPIUser();
-
-
-            //check for existing request
-            List<ReturnRequest> existingPendingRequest = returnRequestRepo.findByCreatedByAndStatus(user.getUsername(),constantUtil.PENDING_APPROVAL);
-            if(!existingPendingRequest.isEmpty()){
-                log.info("Their is an existing pending request for  Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("You have existing request awaiting approval");
-                return response;
-            }
-
-            //check if equipment exists for that quantity
-            List<EquipmentItem> equipmentItems =  equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(request.getEquipmentId(),constantUtil.AVAILABLE);
-            if(equipmentItems.isEmpty()){
-                log.info("The selected equipment is not available at the moment for Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment is not available at the moment.Please try again later");
-                return response;
-            }
-            if(equipmentItems.size()<request.getQuantity()){
-                log.info("At the moment only {} {}s are available for equipment Id {}", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName(),request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage(String.format("At the moment only  %s %ss are available", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName()));
-                return response;
-            }
-
-
-            //TODO --> CHECK FOR QUALITY OF ITEMS
-
-            //CHECK IF ALL WORKFLOW STEPS HAVE BEEN CREATED
-            Equipment equipment = equipmentItems.getFirst().getEquipment();
-            ApprovalWorkflow approvalWorkflow = equipment.getWorkflow();
-
-            if(approvalWorkflow==null){
-                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
-                return response;
-            }
-            List<WorkflowStep> workflowSteps = workflowStepRepo.findByWorkflow(approvalWorkflow);
-
-            if(workflowSteps.isEmpty()){
-                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
-                response.setResponseCode(ApiResponseCode.FAIL);
-                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
-                return response;
-            }
-
-            String returnDateStr = request.getReturnDate(); // e.g., "2026-03-20"
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            LocalDate returnDate = LocalDate.parse(returnDateStr, formatter);
-            Date legacyDate = Date.from(returnDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
-
-            //Create the equipment request
-            Request equipmentRequest = Request.builder()
-                    .trxId(generateRequestId(request.getEquipmentId()))
-                    .event(request.getEvent())
-                    .purpose(request.getPurpose())
-                    .venue(request.getVenue())
-                    .workflow(approvalWorkflow)
-                    .equipment(equipment)
-                    .quantity(request.getQuantity())
-                    .currentApprovalLevel(0)
-                    .returnDate(legacyDate)
-                    .status(constantUtil.PENDING_APPROVAL)
-                    .createdBy(user.getUsername())
-                    .updatedBy(user.getUsername())
-                    .build();
-
-
-            requestRepo.saveAndFlush(equipmentRequest);
-            log.info("Request successfully requested id:{}",equipmentRequest.getId());
-
-
-            List<RequestApproval> requestApprovals = new ArrayList<>();
-            workflowSteps.forEach(workflowStep -> {
-                RequestApproval requestApproval = RequestApproval.builder()
-                        .request(equipmentRequest)
-                        .approverRole(workflowStep.getRoleId())
-                        .stepLevel(workflowStep.getStepLevel())
-                        .isAllocater(workflowStep.getIsAllocater())
-                        .status(constantUtil.PENDING_APPROVAL)
-                        .createdAt(new Date())
-                        .build();
-
-                requestApprovals.add(requestApproval);
-            });
-
-            requestApprovalRepo.saveAll(requestApprovals);
-            log.info("Workflow approval steps successfully requested id:{}",equipmentRequest.getId());
-            response.setResponseCode(ApiResponseCode.SUCCESS);
-            response.setResponseMessage("Equipment request successfully created");
-
-        }
-        catch (Exception e){
-            log.error("ERROR OCCURRED DURING CREATION OF EQUIPMENT REQUEST :: {}" ,e.getMessage());
-            e.printStackTrace();
-            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-            response.setResponseCode(ApiResponseCode.FAIL);
-            response.setResponseMessage("Sorry, an error occurred while creating equipment request! Please Try again later");
-        }
-        return response;
-    }
+//    public ApiResponse createEquipmentReturnRequests(HttpServletResponse httpServletResponse, EquipmentRequest request) {
+//        ApiResponse response = new ApiResponse();
+//        try{
+//            log.info("Creating equipment Return using request: {}", request);
+//            User user = getauthenticatedAPIUser();
+//
+//
+//            //check for existing request
+//            List<ReturnRequest> existingPendingRequest = returnRequestRepo.findByCreatedByAndStatus(user.getUsername(),constantUtil.PENDING_APPROVAL);
+//            if(!existingPendingRequest.isEmpty()){
+//                log.info("Their is an existing pending request for  Id {}", request.getEquipmentId());
+//                response.setResponseCode(ApiResponseCode.FAIL);
+//                response.setResponseMessage("You have existing request awaiting approval");
+//                return response;
+//            }
+//
+//            //check if equipment exists for that quantity
+//            List<EquipmentItem> equipmentItems =  equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(request.getEquipmentId(),constantUtil.AVAILABLE);
+//            if(equipmentItems.isEmpty()){
+//                log.info("The selected equipment is not available at the moment for Id {}", request.getEquipmentId());
+//                response.setResponseCode(ApiResponseCode.FAIL);
+//                response.setResponseMessage("The selected equipment is not available at the moment.Please try again later");
+//                return response;
+//            }
+//            if(equipmentItems.size()<request.getQuantity()){
+//                log.info("At the moment only {} {}s are available for equipment Id {}", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName(),request.getEquipmentId());
+//                response.setResponseCode(ApiResponseCode.FAIL);
+//                response.setResponseMessage(String.format("At the moment only  %s %ss are available", request.getQuantity(), equipmentItems.getFirst().getEquipment().getName()));
+//                return response;
+//            }
+//
+//
+//            //TODO --> CHECK FOR QUALITY OF ITEMS
+//
+//            //CHECK IF ALL WORKFLOW STEPS HAVE BEEN CREATED
+//            Equipment equipment = equipmentItems.getFirst().getEquipment();
+//            ApprovalWorkflow approvalWorkflow = equipment.getWorkflow();
+//
+//            if(approvalWorkflow==null){
+//                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
+//                response.setResponseCode(ApiResponseCode.FAIL);
+//                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
+//                return response;
+//            }
+//            List<WorkflowStep> workflowSteps = workflowStepRepo.findByWorkflow(approvalWorkflow);
+//
+//            if(workflowSteps.isEmpty()){
+//                log.info("The selected equipment has not fully configured approval workflows for equipment Id {}", request.getEquipmentId());
+//                response.setResponseCode(ApiResponseCode.FAIL);
+//                response.setResponseMessage("The selected equipment has not fully configured approval workflows.Kindly contact Admin");
+//                return response;
+//            }
+//
+//            String returnDateStr = request.getReturnDate(); // e.g., "2026-03-20"
+//            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+//            LocalDate returnDate = LocalDate.parse(returnDateStr, formatter);
+//            Date legacyDate = Date.from(returnDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+//
+//            //Create the equipment request
+//            Request equipmentRequest = Request.builder()
+//                    .trxId(generateRequestId(request.getEquipmentId()))
+//                    .event(request.getEvent())
+//                    .purpose(request.getPurpose())
+//                    .venue(request.getVenue())
+//                    .workflow(approvalWorkflow)
+//                    .equipment(equipment)
+//                    .quantity(request.getQuantity())
+//                    .currentApprovalLevel(0)
+//                    .returnDate(legacyDate)
+//                    .status(constantUtil.PENDING_APPROVAL)
+//                    .createdBy(user.getUsername())
+//                    .updatedBy(user.getUsername())
+//                    .build();
+//
+//
+//            requestRepo.saveAndFlush(equipmentRequest);
+//            log.info("Request successfully requested id:{}",equipmentRequest.getId());
+//
+//
+//            List<RequestApproval> requestApprovals = new ArrayList<>();
+//            workflowSteps.forEach(workflowStep -> {
+//                RequestApproval requestApproval = RequestApproval.builder()
+//                        .request(equipmentRequest)
+//                        .approverRole(workflowStep.getRoleId())
+//                        .stepLevel(workflowStep.getStepLevel())
+//                        .isAllocater(workflowStep.getIsAllocater())
+//                        .status(constantUtil.PENDING_APPROVAL)
+//                        .createdAt(new Date())
+//                        .build();
+//
+//                requestApprovals.add(requestApproval);
+//            });
+//
+//            requestApprovalRepo.saveAll(requestApprovals);
+//            log.info("Workflow approval steps successfully requested id:{}",equipmentRequest.getId());
+//            response.setResponseCode(ApiResponseCode.SUCCESS);
+//            response.setResponseMessage("Equipment request successfully created");
+//
+//        }
+//        catch (Exception e){
+//            log.error("ERROR OCCURRED DURING CREATION OF EQUIPMENT REQUEST :: {}" ,e.getMessage());
+//            e.printStackTrace();
+//            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+//            response.setResponseCode(ApiResponseCode.FAIL);
+//            response.setResponseMessage("Sorry, an error occurred while creating equipment request! Please Try again later");
+//        }
+//        return response;
+//    }
 
 
 }

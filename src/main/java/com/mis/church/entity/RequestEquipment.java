@@ -36,6 +36,10 @@ public class RequestEquipment {
     @Column(name = "quantity_requested", nullable = false)
     private Integer quantityRequested;
 
+    @ManyToOne
+    @JoinColumn(name = "status", referencedColumnName = "status_id")
+    private Status status;
+
     @Column(name = "created_at", updatable = false)
     private Date createdAt;
 

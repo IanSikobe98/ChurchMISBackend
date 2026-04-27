@@ -2,10 +2,11 @@ package com.mis.church.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class EquipmentRequest {
-    private Long equipmentId;
-    private int quantity;
+    private List<EquipmentRequestDTO> equipmentRequestDTOList;
     private String purpose;
     private String venue;
     private String event;

@@ -24,12 +24,12 @@ public class Equipment {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    /**
-     * Many equipment types can use one workflow
-     */
-    @ManyToOne
-    @JoinColumn(name = "workflow_id", nullable = false)
-    private ApprovalWorkflow workflow;
+//    /**
+//     * Many equipment types can use one workflow
+//     */
+//    @ManyToOne
+//    @JoinColumn(name = "workflow_id", nullable = false)
+//    private ApprovalWorkflow workflow;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Date createdAt;

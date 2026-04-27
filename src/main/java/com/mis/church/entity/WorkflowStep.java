@@ -22,7 +22,7 @@ public class WorkflowStep {
      * Many steps belong to one workflow
      */
     @ManyToOne
-    @JoinColumn(name = "workflow_id", nullable = false)
+    @JoinColumn(name = "workflow_id")
     private ApprovalWorkflow workflow;
 
     @Column(name = "step_level", nullable = false)

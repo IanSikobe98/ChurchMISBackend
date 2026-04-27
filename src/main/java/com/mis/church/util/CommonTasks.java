@@ -1,6 +1,8 @@
 package com.mis.church.util;
 
+import com.mis.church.entity.ApprovalWorkflow;
 import com.mis.church.entity.Status;
+import com.mis.church.repository.ApprovalWorkflowRepo;
 import com.mis.church.repository.StatusRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
@@ -23,11 +26,15 @@ public class CommonTasks {
     private static final String SECRET_KEY = "3$RcX@8eWp9Tq3Ls"; // Must match the JS secret key
     private static final String Church ="CH";
     private static final String Equipment ="EQ";
-
+    private final ApprovalWorkflowRepo approvalWorkflowRepo;
 
 
     public Status getStatus(int id) {
         return statusRepo.findById(id).orElse(null);
+    }
+
+    public ApprovalWorkflow getApprovalWorkflow(int id){
+        return approvalWorkflowRepo.findById(id).orElse(null);
     }
 
     public String AESdecrypt(String encryptedPassword) throws Exception {
@@ -59,7 +66,9 @@ public class CommonTasks {
         }
     }
 
-    public static String generateRequestId(Long equipId ) {
+    public static String generateRequestId() {
+        Random rand = new Random();
+        int equipId = rand.nextInt(9000) + 1000;
         Date valueDate = new Date();
         // Parse the string to LocalDate
         LocalDateTime localDateTime = valueDate.toInstant()
