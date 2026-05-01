@@ -35,6 +35,7 @@ public class ConstantUtil {
     public Status MAINTENANCE;
     public Status RETURNED;
     public Status LOST;
+    public Status RESERVRED;
 
 
     public ApprovalWorkflow EQUIPMENT_WORKFLOW;
@@ -58,6 +59,7 @@ public class ConstantUtil {
         MAINTENANCE = commonTasks.getStatus(14);
         RETURNED = commonTasks.getStatus(15);
         LOST = commonTasks.getStatus(16);
+        RESERVRED = commonTasks.getStatus(17);
 
         EQUIPMENT_WORKFLOW = commonTasks.getApprovalWorkflow(1);
 

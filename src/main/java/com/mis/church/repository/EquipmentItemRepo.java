@@ -11,8 +11,11 @@ import java.util.List;
 @Repository
 public interface EquipmentItemRepo extends JpaRepository<EquipmentItem,Integer> {
 
-    List<EquipmentItem> findByEquipment_IdAndAvailabilityStatus(Long equipmentId, Status status);
+//    List<EquipmentItem> findByEquipment_IdAndAvailabilityStatus(Long equipmentId, Status status);
     List<EquipmentItem> findByEquipment_IdAndAvailabilityStatusAndConditionStatus_StatusId(Long equipment_id,
                                                                                            Status status, Integer statusId,Pageable pageable);
+
+    List<EquipmentItem> findByEquipment_IdAndAvailabilityStatusAndConditionStatusIn(Long equipment_id,
+                                                                                           Status status, List<Status> statuses);
 
 }

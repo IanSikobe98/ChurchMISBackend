@@ -1,5 +1,6 @@
 package com.mis.church.entity;
 
+import com.mis.church.dto.EquipmentRequest;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -22,7 +23,7 @@ public class EquipmentAllocation {
      */
     @ManyToOne
     @JoinColumn(name = "request_id", nullable = false)
-    private Request request;
+    private RequestEquipment request;
 
     /**
      * Actual equipment item allocated

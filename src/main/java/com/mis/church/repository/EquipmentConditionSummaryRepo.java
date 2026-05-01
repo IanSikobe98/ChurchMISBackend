@@ -8,6 +8,6 @@ import java.util.List;
 
 @Repository
 public interface EquipmentConditionSummaryRepo extends JpaRepository<EquipmentConditionSummary,Long> {
-    List<EquipmentConditionSummary> findByEquipmentId(Long id);
-    List<EquipmentConditionSummary> findByEquipmentIdAndStatusIdIn(Long id,List<Integer> statusIds);
+    List<EquipmentConditionSummary> findByEquipmentIdIn(List<Long> id);
+    List<EquipmentConditionSummary> findByEquipmentIdInAndStatusIdIn(List<Long> id,List<Integer> statusIds);
 }

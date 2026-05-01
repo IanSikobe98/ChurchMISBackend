@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.mis.church.enums.Action.APPROVE;
 import static com.mis.church.enums.Action.REJECT;
@@ -114,7 +115,8 @@ public class EquipmentService {
             //Validations for equipment
             equipmentRequests.forEach(equipmentRequest -> {
                 //check if equipment exists for that quantity
-                List<EquipmentItem> equipmentItems = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(equipmentRequest.getEquipmentId(), constantUtil.AVAILABLE);
+                List<Status> statuses = Arrays.asList(constantUtil.EXCELLENT,constantUtil.GOOD,constantUtil.FAIR);
+                List<EquipmentItem> equipmentItems = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatusAndConditionStatusIn(equipmentRequest.getEquipmentId(), constantUtil.AVAILABLE,statuses);
                 String errorMessage = "";
                 if (equipmentItems.isEmpty()) {
                     log.info("The selected equipment is not available at the moment for Id {}", equipmentRequest.getEquipmentId());
@@ -141,10 +143,10 @@ public class EquipmentService {
                 return response;
             }
 
-            String returnDateStr = request.getReturnDate(); // e.g., "2026-03-20"
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            LocalDate returnDate = LocalDate.parse(returnDateStr, formatter);
-            Date legacyDate = Date.from(returnDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+//            String returnDateStr = request.getReturnDate(); // e.g., "2026-03-20"
+//            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+//            LocalDate returnDate = LocalDate.parse(returnDateStr, formatter);
+//            Date legacyDate = Date.from(returnDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
             Request equiRequest = Request.builder()
                     .trxId(generateRequestId())
@@ -153,7 +155,7 @@ public class EquipmentService {
                     .venue(request.getVenue())
                     .workflow(approvalWorkflow)
                     .currentApprovalLevel(0)
-                    .returnDate(legacyDate)
+//                    .returnDate(legacyDate)
                     .status(constantUtil.PENDING_APPROVAL)
                     .createdBy(user.getUsername())
                     .updatedBy(user.getUsername())
@@ -166,7 +168,8 @@ public class EquipmentService {
 
 
             try {
-                workflowSteps.forEach(workflowStep -> {
+                int skipCounter = 0;
+                for(WorkflowStep workflowStep : workflowSteps){
                     Role role = workflowStep.getRoleId();
                     if (role == null) {
                         //CRiteria for the various heads
@@ -180,34 +183,39 @@ public class EquipmentService {
                             else{
                                 //Skips this approval step
                                 log.info("The department head could not be found");
-                                return;
+                                skipCounter = skipCounter+1;
+                                continue;
                             }
                         }
                         else{
                             //Skips this approval step
                             log.info("The department head could not be found");
-                            return;
+                            skipCounter = skipCounter+1;
+                            continue;
                         }
                     }
 
                     RequestApproval requestApproval = RequestApproval.builder()
                             .request(equiRequest)
                             .approverRole(role)
-                            .stepLevel(workflowStep.getStepLevel())
+                            .stepLevel(workflowStep.getStepLevel()-skipCounter)
                             .isAllocater(workflowStep.getIsAllocater())
                             .status(constantUtil.PENDING_APPROVAL)
                             .createdAt(new Date())
                             .build();
 
                     requestApprovals.add(requestApproval);
-                });
+                }
 
 
                 requestApprovalRepo.saveAll(requestApprovals);
                 log.info("Workflow approval steps successfully requested id:{}", equiRequest.getId());
 
 
+
                 //Set equipments for request
+                List<EquipmentAllocation> equipmentAllocations = new ArrayList<>();
+                List<EquipmentItem> updatedEquipmentItemsList = new  ArrayList<>();
                 equipmentRequests.forEach(equipmentRequest -> {
 
                     List<EquipmentItem> equipmentItemList = equipmentItemsMap.getOrDefault(equipmentRequest.getEquipmentId(),new ArrayList<>());
@@ -219,11 +227,88 @@ public class EquipmentService {
                                 .quantityRequested(equipmentRequest.getQuantity())
                                 .status(constantUtil.PENDING_APPROVAL)
                                 .build();
-                        requestEquipments.add(requestEquipment);
+                        requestEquipmentRepo.saveAndFlush(requestEquipment);
+
+                        List<EquipmentItem> excellentItems = new ArrayList<>(equipmentItemList.stream()
+                                .filter(equipmentItem -> equipmentItem.getConditionStatus().equals(constantUtil.EXCELLENT))
+                                .toList());
+
+                        List<EquipmentItem> goodItems = new ArrayList<>(equipmentItemList.stream()
+                                .filter(equipmentItem -> equipmentItem.getConditionStatus().equals(constantUtil.GOOD))
+                                .toList());
+
+                        List<EquipmentItem> fairItems = new ArrayList<>(equipmentItemList.stream()
+                                .filter(equipmentItem -> equipmentItem.getConditionStatus().equals(constantUtil.FAIR))
+                                .toList());
+
+
+
+
+                        //Allocates excellent items first then good and fair ones next
+                        for(int i=0;i<equipmentRequest.getQuantity();i++){
+                            if(!excellentItems.isEmpty()){
+                                EquipmentItem excellentItem = excellentItems.getFirst();
+                                //Reserve equipment so that another person does not make a booking for an  booked item awaiting approval
+                                excellentItem.setAvailabilityStatus(constantUtil.RESERVRED);
+//                                updatedEquipmentItemsList.add(excellentItem);
+
+                                EquipmentAllocation equipmentAllocation = EquipmentAllocation.builder()
+                                        .request(requestEquipment)
+                                        .equipmentItem(excellentItem)
+                                        .conditionBefore(excellentItem.getConditionStatus())
+                                        .status(constantUtil.PENDING_APPROVAL)
+                                        .createdBy(user.getUsername())
+                                        .updatedBy(user.getUsername())
+                                        .build();
+                                equipmentAllocations.add(equipmentAllocation);
+
+
+                                excellentItems.remove(excellentItem);
+                            }
+                            else if(!goodItems.isEmpty()){
+                                EquipmentItem goodItem = goodItems.getFirst();
+                                //Reserve equipment so that another person does not make a booking for an  booked item awaiting approval
+                                goodItem.setAvailabilityStatus(constantUtil.RESERVRED);
+//                                updatedEquipmentItemsList.add(goodItem);
+
+
+                                EquipmentAllocation equipmentAllocation = EquipmentAllocation.builder()
+                                        .request(requestEquipment)
+                                        .equipmentItem(goodItem)
+                                        .conditionBefore(goodItem.getConditionStatus())
+                                        .status(constantUtil.PENDING_APPROVAL)
+                                        .createdBy(user.getUsername())
+                                        .updatedBy(user.getUsername())
+                                        .build();
+                                equipmentAllocations.add(equipmentAllocation);
+                                goodItems.remove(goodItem);
+                            }
+
+                            else if(!fairItems.isEmpty()){
+                                EquipmentItem fairItem = fairItems.getFirst();
+                                //Reserve equipment so that another person does not make a booking for an  booked item awaiting approval
+                                fairItem.setAvailabilityStatus(constantUtil.RESERVRED);
+//                                updatedEquipmentItemsList.add(fairItem);
+
+
+                                EquipmentAllocation equipmentAllocation = EquipmentAllocation.builder()
+                                        .request(requestEquipment)
+                                        .equipmentItem(fairItem)
+                                        .conditionBefore(fairItem.getConditionStatus())
+                                        .status(constantUtil.PENDING_APPROVAL)
+                                        .createdBy(user.getUsername())
+                                        .updatedBy(user.getUsername())
+                                        .build();
+                                equipmentAllocations.add(equipmentAllocation);
+                                fairItems.remove(fairItem);
+
+                            }
+                        }
                     }
                 });
-                requestEquipmentRepo.saveAll(requestEquipments);
-                log.info("Request Equipment successfully created for  id:{}", equiRequest.getId());
+//                equipmentItemRepo.saveAll(updatedEquipmentItemsList);
+                equipmentAllocationRepo.saveAll(equipmentAllocations);
+                log.info("Request Equipment and allocations successfully created for  id:{}", equiRequest.getId());
 
 
             }
@@ -288,7 +373,10 @@ public class EquipmentService {
 
             equipmentList.forEach(equipment -> {
                 EquipmentInfo equipmentInfo = new EquipmentInfo();
-                List<EquipmentItem> equipmentItemList = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatus(equipment.getId(),constantUtil.AVAILABLE);
+                List<Status> statuses = Arrays.asList(constantUtil.EXCELLENT,constantUtil.GOOD,constantUtil.FAIR);
+                List<EquipmentItem> equipmentItemList  = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatusAndConditionStatusIn(equipment.getId(),
+                        constantUtil.AVAILABLE,statuses);
+
                 if(!equipmentItemList.isEmpty()) {
                     equipmentInfo.setEquipment(equipment);
                     equipmentInfo.setQuantity(equipmentItemList.size());
@@ -367,10 +455,20 @@ public class EquipmentService {
         try{
             User loggedInUser = getauthenticatedAPIUser();
 
+            List<RequestEquipment> requestEquipments = requestEquipmentRepo.findByRequest_Id(Long.valueOf(request.getId()));
+            List<Long> equipmentIds = new ArrayList<>();
+            HashSet<Long> duplicateCheckMap = new HashSet<>();
+
+            requestEquipments.forEach(requestEquipment -> {
+                if(duplicateCheckMap.add(requestEquipment.getEquipment().getId())) {
+                    equipmentIds.add(requestEquipment.getEquipment().getId());
+                }
+            });
+
             if (request.getStatuses() != null  && !request.getStatuses().isEmpty()) {
-                equipmentConditionSummaries = equipmentConditionSummaryRepo.findByEquipmentIdAndStatusIdIn(Long.valueOf(request.getId()),request.getStatuses());
+                equipmentConditionSummaries = equipmentConditionSummaryRepo.findByEquipmentIdInAndStatusIdIn(equipmentIds,request.getStatuses());
             } else {
-                equipmentConditionSummaries = equipmentConditionSummaryRepo.findByEquipmentId(Long.valueOf(request.getId()));
+                equipmentConditionSummaries = equipmentConditionSummaryRepo.findByEquipmentIdIn(equipmentIds);
             }
 
 
@@ -381,7 +479,6 @@ public class EquipmentService {
             mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
             response.setData(mapper.readValue(mapper.writeValueAsString(equipmentConditionSummaries), ArrayList.class));
             return response;
-
 
         }
         catch (Exception e){
@@ -595,39 +692,6 @@ public class EquipmentService {
             }
 
             if(request.getAction().equals(APPROVE.getValue())){
-                if(existingRequestApproval.getIsAllocater() && request.getApprovalEquipment()!=null && !request.getApprovalEquipment().isEmpty()){
-                    List<ApprovalEquipment> approvalEquipmentList = request.getApprovalEquipment();
-                    approvalEquipmentList.forEach(approvalEquipment -> {
-                        if(approvalEquipment.getQuantity()>=1) {
-                            Optional<Equipment> equipmentOptional = equipmentRepo.findById(approvalEquipment.getEquipmentId());
-                            //TODO CHECK IF EQUIPMENT DOES NOT EXIST DO WE FAIL THE WHOLE REQUEST??
-                            if (equipmentOptional.isPresent()) {
-                                Equipment equipment = equipmentOptional.get();
-
-                                //fetch first  accounts
-                                Pageable pageable = PageRequest.of(0, approvalEquipment.getQuantity());
-                                List<EquipmentItem> equipmentItems = equipmentItemRepo.findByEquipment_IdAndAvailabilityStatusAndConditionStatus_StatusId(equipment.getId(), constantUtil.AVAILABLE, approvalEquipment.getStatusId(), pageable);
-                                List<EquipmentAllocation> equipmentAllocations = new ArrayList<>();
-                                equipmentItems.forEach(equipmentItem -> {
-                                    EquipmentAllocation equipmentAllocation = EquipmentAllocation.builder()
-                                            .request(existingRequestApproval.getRequest())
-                                            .equipmentItem(equipmentItem)
-                                            .conditionBefore(commonTasks.getStatus(approvalEquipment.getStatusId()))
-                                            .status(constantUtil.PENDING_APPROVAL)
-                                            .createdBy(loggedInUser.getUsername())
-                                            .updatedBy(loggedInUser.getUsername())
-                                            .build();
-                                    equipmentAllocations.add(equipmentAllocation);
-                                });
-                                equipmentAllocationRepo.saveAll(equipmentAllocations);
-                                log.info("Equipment allocations created successfully for equipment {}", equipment.getName());
-                            }
-                        }
-                    });
-                }
-
-
-
                 existingRequestApproval.setStatus(constantUtil.ACTIVE);
                 existingRequestApproval.setActionBy(loggedInUser);
                 existingRequestApproval.setActionAt(new  Date());
@@ -656,25 +720,33 @@ public class EquipmentService {
                 //This means all parties have approved
                 if(requestApprovals.isEmpty()){
                     Request existingRequest = existingRequestApproval.getRequest();
-                    List<EquipmentAllocation> equipmentAllocations =  equipmentAllocationRepo.findByRequestAndStatus(existingRequest,constantUtil.PENDING_APPROVAL);
-
-                    if(!equipmentAllocations.isEmpty()){
-                        equipmentAllocations.stream().forEach(equipmentAllocation -> {
-                           equipmentAllocation.setStatus(constantUtil.ALLOCATED);
-                           equipmentAllocation.setAllocatedAt(new  Date());
-                           equipmentAllocation.setUpdatedBy(loggedInUser.getUsername());
-                           equipmentAllocationRepo.save(equipmentAllocation);
-
-                           EquipmentItem equipmentItem = equipmentAllocation.getEquipmentItem();
-                           equipmentItem.setAvailabilityStatus(constantUtil.ALLOCATED);
-                           equipmentItem.setUpdatedBy(loggedInUser.getUsername());
-                           equipmentItemRepo.save(equipmentItem);
+                    List<RequestEquipment> requestEquipments = requestEquipmentRepo.findByRequest(existingRequest);
 
 
-                        });
-                        log.info("Equipment successfully allocated");
+                    if(!requestEquipments.isEmpty()){
+                        requestEquipments.forEach(requestEquipment -> {
+                            List<EquipmentAllocation> equipmentAllocations = equipmentAllocationRepo.findByRequestAndStatus(
+                                    requestEquipment, constantUtil.PENDING_APPROVAL);
+
+                            if(!equipmentAllocations.isEmpty()){
+                                equipmentAllocations.forEach(equipmentAllocation -> {
+                                    EquipmentItem equipmentItem = equipmentAllocation.getEquipmentItem();
+                                    equipmentItem.setAvailabilityStatus(constantUtil.ALLOCATED);
+                                    equipmentItemRepo.save(equipmentItem);
+
+                                    equipmentAllocation.setStatus(constantUtil.ALLOCATED);
+                                    equipmentAllocation.setAllocatedAt(new  Date());
+                                    equipmentAllocation.setUpdatedBy(loggedInUser.getUsername());
+                                    equipmentAllocationRepo.save(equipmentAllocation);
+                                });
+                            }
+
+                            requestEquipment.setStatus(constantUtil.ACTIVE);
+                            requestEquipmentRepo.save(requestEquipment);
+                    });
+
+                        log.info("Equipment allocations updated successfully allocated for request {}", existingRequest.getId());
                     }
-
 
                     existingRequest.setStatus(constantUtil.ACTIVE);
                     requestRepo.save(existingRequest);
@@ -687,6 +759,38 @@ public class EquipmentService {
 
             }
             else if(request.getAction().equals(REJECT.getValue())){
+
+                Request existingRequest = existingRequestApproval.getRequest();
+                List<RequestEquipment> requestEquipments = requestEquipmentRepo.findByRequest(existingRequest);
+
+                //update status of request equipment
+                if(!requestEquipments.isEmpty()){
+                    requestEquipments.forEach(requestEquipment -> {
+                        List<EquipmentAllocation> equipmentAllocations = equipmentAllocationRepo.findByRequestAndStatus(
+                                requestEquipment, constantUtil.PENDING_APPROVAL);
+
+                        if(!equipmentAllocations.isEmpty()){
+                            equipmentAllocations.forEach(equipmentAllocation -> {
+                                EquipmentItem equipmentItem = equipmentAllocation.getEquipmentItem();
+                                //make equipment available for  another person to book it
+                                equipmentItem.setAvailabilityStatus(constantUtil.AVAILABLE);
+                                equipmentItemRepo.save(equipmentItem);
+
+                                equipmentAllocation.setStatus(constantUtil.REJECTED);
+                                equipmentAllocation.setAllocatedAt(new  Date());
+                                equipmentAllocation.setUpdatedBy(loggedInUser.getUsername());
+                                equipmentAllocationRepo.save(equipmentAllocation);
+                            });
+                        }
+
+                        requestEquipment.setStatus(constantUtil.ACTIVE);
+                        requestEquipmentRepo.save(requestEquipment);
+                    });
+
+                    log.info("Equipment allocations updated successfully allocated for request {}", existingRequest.getId());
+                }
+
+
                 existingRequestApproval.setActionBy(loggedInUser);
                 existingRequestApproval.setActionAt(new  Date());
                 existingRequestApproval.setComments(request.getDescription());
@@ -725,6 +829,8 @@ public class EquipmentService {
         }
         return response;
     }
+
+
 
 
 //    public ApiResponse createEquipmentReturnRequests(HttpServletResponse httpServletResponse, EquipmentRequest request) {
